@@ -1,0 +1,111 @@
+\documentclass[12pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{times}
+\usepackage{parskip}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\geometry{margin=1in}
+
+\definecolor{accent}{HTML}{8B3A2F}
+\titleformat{\section}{\Large\bfseries\color{accent}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.8em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[L]{\small Operation fsoc / 5 Lessons Learned}
+\fancyfoot[R]{\small \thepage}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+\begin{document}
+
+\begin{center}
+{\LARGE\textbf{Lessons Learned}}\\[4pt]
+{\large Integration Traps from the Project}\\[6pt]
+Gurmann Basran
+\end{center}
+
+\section{Why this document exists}
+
+Each of the traps in this document cost me real debugging time, somewhere between one and eight hours each, and in one case an evening where I nearly lost internet for my whole apartment. None of them were findable by reading the official documentation of the tools involved ahead of time. Every one of them generalizes beyond my specific project, which is why I have written each one at the \emph{class of trap} level. Specific tool names, config paths, and version strings have been kept out because they are attacker-useful fingerprints; what is preserved is the pattern itself.
+
+The point of keeping a document like this is so that future-me does not re-discover the same lesson on a Tuesday at 2 AM. The secondary point is that if you are reading this and you work with anything in the same category of tool, one of these might save you an afternoon.
+
+\section{Do not re-serialize a config file when the tool treats it as a byte-exact artifact}
+
+\textbf{Class of trap.} Some tools treat their configuration file as a byte-exact artifact: they hash it, diff it, version-control it internally, or otherwise care about exact byte equality beyond XML semantics. A ``just parse and re-serialize'' library, which is a standard instinct for programmatic config manipulation, will reorder attributes, normalize whitespace, or change self-closing-tag formatting in ways that the tool's internal diff interprets as ``entire file changed.'' The symptom is either a tool that refuses to render the changed config, or, worse, a tool that applies a merged version where half of the intended change has been silently dropped.
+
+\textbf{The right path.} Always check whether the tool has a programmatic API before you write to its config file. Most modern appliances do; most of them are poorly documented but stable. Use the API and skip the file-level manipulation entirely.
+
+\textbf{Why this generalizes.} Any system that treats its config as a byte-exact artifact cannot safely be edited by a library that does not preserve exact bytes. This applies to more tools than you would expect, especially in the network-appliance and storage-appliance category.
+
+\section{Some appliances silently ignore standard config drop-ins}
+
+\textbf{Class of trap.} The modern Linux convention for configuring services is a directory of drop-in files: you put your change in \texttt{/etc/<service>/conf.d/99-mine.conf} and the service reads it. This works on a stock distribution. It does not work on some appliances, where the on-disk config is regenerated from an internal declarative source and the drop-in directory simply is not referenced. The trap is that the file is there, the syntax is valid, the usual validation command parses it, but the service itself is not reading it. The hardening you thought you applied is silently inactive.
+
+\textbf{The right path.} Check the config precedence order before assuming a drop-in works. On an appliance, the declarative source is usually the appliance's own config store, not the OS-level file layout. Edit the declarative source; let the appliance regenerate from it.
+
+\textbf{Why this generalizes.} When an appliance generates its own config from a declarative source, OS-level best-practice layouts become misleading. Always find the generating source before you try to add to the generated file.
+
+\section{Some config options apply at resource-creation, not at service-restart}
+
+\textbf{Class of trap.} The mental model ``change daemon config, restart daemon, change takes effect'' is not always accurate. Some config options are evaluated at resource-creation time and baked into the resource's own configuration, then never re-read from the daemon config. Restart the daemon all you want; the existing resources will continue using the old settings, and only newly-created resources will pick up the change.
+
+\textbf{The right path.} Check whether a config option is read at startup (retroactive to existing state) or at resource creation (not retroactive). For not-retroactive options, either re-create every existing resource or add a workaround that operates at a layer below the daemon.
+
+\textbf{Why this generalizes.} ``Restart takes effect'' and ``restart applies to existing state'' are very different guarantees. This trap shows up in container runtimes, in logging daemons, in message brokers, anywhere that tracks per-resource state across restarts.
+
+\section{GUI panels labelled ``custom configuration'' are scoped}
+
+\textbf{Class of trap.} Web UIs often expose a panel labelled something like ``Custom Configuration'' for the underlying tool. The abstraction leaks: the panel is scoped to a specific context (a per-host block, a per-server block, a per-tenant block), and a directive that does not belong in that context will be accepted by the UI, saved to the regenerated config, and then cause the underlying daemon to refuse to start. The result is that a change you thought was additive takes down every service sharing that regenerated config.
+
+\textbf{The right path.} Find and read the generated config before writing to a ``Custom Configuration'' panel. Know which scope the panel's content ends up in. Directives that belong at a different scope need a different file, often not exposed through the UI at all.
+
+\textbf{Why this generalizes.} Any configuration-management GUI that hides scope is a source of this class of bug. When the backing format has strict scoping rules, the abstraction will eventually leak.
+
+\section{OS-level library upgrades can silently break language bindings}
+
+\textbf{Class of trap.} Routine package upgrades on a services host can pull in a new version of a system library that has removed a symbol a language-level binding was relying on. The binding is still installed; the version number has not changed; but calling into it fails at import. A tool that has been running for months starts failing at startup with a cryptic error, and you are debugging a system library from inside a script.
+
+\textbf{The right path.} Update the language-level binding to a version that matches the new system library. Add a startup healthcheck to tools that depend on C-level bindings so that an import failure produces a clear message rather than a cryptic one.
+
+\textbf{Why this generalizes.} The ``it was working yesterday'' heuristic is unreliable on a system where the OS keeps itself up to date. Every critical third-party binding on a services host deserves a boot-time healthcheck.
+
+\section{Soft-delete without on-disk cleanup leaves orphans that block regeneration}
+
+\textbf{Class of trap.} Many tools that store configuration in a database plus filesystem treat a delete as a soft-delete: the row is flagged as deleted, but the corresponding on-disk artifact (a config file, a generated template, a cached build) is not removed. The trap surfaces weeks later when you try to create a new resource that shares a unique property with the deleted one (a hostname, a path, a route), and the new resource cannot be created because of an orphan artifact that still exists on disk.
+
+\textbf{The right path.} After any delete that should have freed up a name, check the filesystem for orphans. When the tool offers a hard-delete, use it. When it does not, script the cleanup.
+
+\textbf{Why this generalizes.} Any tool that treats its database and its filesystem as two separate sources of truth is susceptible to this. Soft-delete is a great feature until it is a silent source of conflict.
+
+\section{Legacy fallback paths survive credential rotation}
+
+\textbf{Class of trap.} Some daemons check multiple locations for credentials, keys, or authorized entities by default. You update the primary location, remove the old credential, confirm it no longer appears in that location, and then the old credential continues to work anyway, because the daemon is checking a secondary location you did not know about.
+
+\textbf{The right path.} When rotating credentials, audit \emph{every} location the daemon will read them from. Either clean all locations, or explicitly configure the daemon to look at only one.
+
+\textbf{Why this generalizes.} Legacy fallback paths are a class of ``I thought I removed that access but actually I did not'' bugs. They are especially common in tools that predate the modern single-canonical-location convention.
+
+\section{Command-line option compatibility is rarely documented completely}
+
+\textbf{Class of trap.} A command-line tool accepts several combinations of flags, but not all combinations are valid. Some flags only function with particular other flags; when combined with an incompatible alternative, they are silently ignored or cause a cryptic error. The documentation rarely enumerates every compatibility rule.
+
+\textbf{The right path.} When a command takes an unusual combination of flags, test with a known-good simple case first, then add flags one at a time. When a flag you expected to do something appears to do nothing, check for an implicit dependency on another flag.
+
+\textbf{Why this generalizes.} Command-line option matrices are almost never documented exhaustively. The only reliable way to know whether a combination works is to try it and observe.
+
+\section{Meta-lesson}
+
+Every one of these cost between one and eight hours of debug time. All of them were invisible until I triggered them; none were findable by reading the official documentation ahead of time. The way you build a hardened system is by making these discoveries, writing them down, and cross-referencing them across your projects so future-you does not re-discover them at 2 AM on a Tuesday.
+
+I keep the live version of this document in my private planning directory, with the specific tool names and config paths intact because I need them for my own debugging. The public version that you are reading is the generalized one. If any of these patterns saves you an afternoon, that is the whole point of writing them down.
+
+\end{document}

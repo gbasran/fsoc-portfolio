@@ -1,0 +1,142 @@
+\documentclass[12pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{times}
+\usepackage{parskip}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\geometry{margin=1in}
+
+\definecolor{accent}{HTML}{8B3A2F}
+\titleformat{\section}{\Large\bfseries\color{accent}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.8em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[L]{\small Operation fsoc / 3 Hardening Methodology}
+\fancyfoot[R]{\small \thepage}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+\begin{document}
+
+\begin{center}
+{\LARGE\textbf{Hardening Methodology}}\\[4pt]
+{\large Operation fsoc: Case Study}\\[6pt]
+Gurmann Basran
+\end{center}
+
+\section{Why I wrote one}
+
+When I started this project, my first few sessions were ``read a blog post, copy a config, move on.'' That produced a system that looked hardened. My notes said I had done a lot of things. In practice, three weeks later, I could not tell you which change addressed which risk, or whether a given rule was still serving its original purpose or had become vestigial. The methodology in this document exists because I got tired of that.
+
+The core idea is borrowed from formal audit practice and scaled down to a solo operator: every finding gets a stable ID, every mitigation names the ID it closes, and no ``fix it later'' entry survives without a phase assignment. It sounds bureaucratic when you first read it and it sounds obvious after you have done it. The difference is measured in how long it takes to answer ``why does this rule exist?'' three months from now.
+
+\section{The five-step loop}
+
+\subsection{Step 1: Red-team the existing configuration}
+
+I run two passes: outside-in and inside-out. Outside-in asks what an attacker on the WAN sees. Inside-out asks what an attacker on a compromised container, or a compromised home-zone device, sees. The inside-out pass is the one that catches the interesting stuff, because it mirrors what actually happens during a real breach: the first point of entry is rarely the most interesting compromise.
+
+The red-team pass enumerates every exposed service, every allow-all rule, every credential that is not handled the way it should be, every default binding, and every cross-zone path. The output is a flat list of observations. It is deliberately uncurated; I do not try to prioritize while I am discovering.
+
+\subsection{Step 2: Log every finding with a stable ID}
+
+Each observation becomes a finding of the form \texttt{\{ID, description, severity\}}. The ID is stable for the lifetime of the project; it appears in commit messages, phase document headers, and the audit trail. Severity is one of Critical, High, Medium, or Low, using the definitions in the Threat Model document.
+
+I deliberately do not fix anything at this step. The goal is to get the whole list written down before I start making judgment calls, because the prioritization step makes more sense with the whole picture in view.
+
+\subsection{Step 3: Map every finding to the phase that closes it}
+
+Every finding gets an assignment to a specific phase in the roadmap. If a finding has no phase, I have two choices: create a phase, or mark it as residual risk in the threat model and explain why it is acceptable. What I do not do is leave it floating. ``I will get to this later'' is how security work silently rots.
+
+This step is also where I catch findings that belong in a completely different phase than I would have guessed. What looks like a DNS-layer problem might really be a supply-chain problem; what looks like a firewall-rule problem might really be a naming problem, where I cannot tell which services live in which zone. The mapping forces me to be precise about what I am actually fixing.
+
+\subsection{Step 4: Leave the paper trail in commits}
+
+Every mitigation commit names the finding ID it closes. The mechanism is a commit message like \texttt{+close H3: tighten inter-zone policy on management path}. Months from now, when I am reading the log and wondering why a particular rule exists, the commit message tells me the finding it addressed, and the finding itself tells me what risk it was mitigating.
+
+This is the step that unlocks the real value of the methodology. Without it, the finding list is a to-do list; with it, the finding list becomes a history.
+
+\subsection{Step 5: Gate later phases on earlier phases landing}
+
+If a later phase depends on an earlier phase's firewall rules being in place, the later phase does not begin until the earlier phase is marked complete and its audit findings are closed. I do not speculatively work on dependent layers; the cost of rework is high and the intervening soak time catches the things that were wrong in the earlier phase but did not surface immediately.
+
+This is also where I learned that 24 hours of soak between a hardening phase and the next one is non-negotiable. I have more than once thought a change worked, only to discover 12 hours later that something did not like it. A phase gate is a forcing function for that soak time.
+
+\section{The finding table in practice}
+
+The real project has several dozen findings spread across Critical, High, Medium, Low, a red-team-additional category from a second pass, and a handful of additions from subsequent passes. I am not publishing the content of the findings in this document because they map to specific services and configuration, and the contents are attacker-useful. The \emph{structure} of the table looks like this:
+
+\begin{tabular}{|l|l|p{4cm}|p{4cm}|}
+\hline
+\textbf{ID} & \textbf{Severity} & \textbf{Category} & \textbf{Phase that closes it} \\
+\hline
+C1 & Critical & Admin plane & Early sub-phase of hardening pass \\
+\hline
+C2 & Critical & Admin plane & Early sub-phase of hardening pass \\
+\hline
+C3 & Critical & Credential management & Early sub-phase of hardening pass \\
+\hline
+\ldots & \ldots & \ldots & \ldots \\
+\hline
+H1 & High & Zone isolation & Mid sub-phase of hardening pass \\
+\hline
+\ldots & \ldots & \ldots & \ldots \\
+\hline
+RT-A & High (red-team) & DNS security & Mid sub-phase of hardening pass \\
+\hline
+\ldots & \ldots & \ldots & \ldots \\
+\hline
+\end{tabular}
+
+The point of showing the structure rather than the contents is that the structure is what transfers to another project. The specific findings are project-specific; the methodology is not.
+
+\section{Phase ordering: safe changes first}
+
+The single most valuable lesson from running the first pass of this methodology was that change ordering matters as much as the changes themselves. An earlier draft of my hardening plan nearly cost me a multi-hour internet outage because I sequenced a dangerous reconfiguration of the perimeter before the safety net was in place.
+
+The refined ordering I use now has four tiers:
+
+\begin{enumerate}[leftmargin=18pt,itemsep=4pt]
+  \item \textbf{Pre-flight.} Backups of every VM, a dead-man SSH session open to an emergency IP on a separate physical NIC, physical console access verified. None of these change the running system; they are insurance.
+  \item \textbf{Safety-net changes.} Things that cannot break connectivity. Credential hardening, secret rotation, internal encryption-at-rest. If one of these goes wrong, the service affected is degraded; nothing catastrophic happens.
+  \item \textbf{Reversible changes.} Zone-policy tightening, service binding changes, SSH configuration. Each has an explicit rollback plan. These run in a single session with a second SSH window open so I can roll back if the primary session dies.
+  \item \textbf{Dangerous changes.} Anything that reconfigures the admin plane itself: firewall GUI binding, SSH access policy, VPN policy. These require a human-verified post-flight checklist and at least one live second SSH session for rollback.
+\end{enumerate}
+
+Cosmetic cleanup (stale host entries, config comments, service banners) happens last, after the hardening phase has soaked for long enough to know everything still works.
+
+Every phase declares its own rollback plan before execution. If there is no rollback plan, the phase does not run. This sounds strict until you have nearly lost internet for an afternoon because you skipped writing one.
+
+\section{Phase gating in practice}
+
+This is the shape of a phase-gate checklist as it appears in the live planning document, redacted:
+
+\begin{verbatim}
+Pre-flight checklist for the next hardening phase.
+All items must be checked before the phase begins.
+
+[ ] Second persistent SSH session open via emergency IP (dead-man switch)
+[ ] Physical console access verified; keyboard and monitor ready
+[ ] Snapshot of the firewall VM and the services VM completed
+[ ] Firewall config backup downloaded and checksum-pinned
+[ ] All prior-phase findings marked CLOSED
+[ ] 24-hour soak test since the prior phase with no untriaged alerts
+\end{verbatim}
+
+If any box is unchecked, the phase does not begin. Not tomorrow; not after I grab coffee; the phase is blocked until the box is green. The handful of times I have been tempted to skip a gate have all been cases where a gate was most likely to save me.
+
+\section{Why this matters}
+
+The difference between a system that looks hardened and a system that actually is hardened is traceability. When something breaks three months from now, the right question is not ``what did we do?'' It is ``which finding did this change close, and what was the rollback plan?'' The answer has to exist in writing, in the commit log, still findable. This methodology is how you make that answer exist.
+
+The second reason to do this is that hardening work, like any skill, improves with practice. The only way to improve is to make the process legible enough to critique afterward. A methodology I can read back is a methodology I can improve; a set of ad-hoc changes I made on a Tuesday at 11 PM is not.
+
+\end{document}

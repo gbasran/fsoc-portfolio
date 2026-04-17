@@ -1,0 +1,33 @@
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+*.bbl
+*.blg
+*.run.xml
+*.snm
+*.nav
+*.vrb
+
+# Build output directories
+.build/
+build/
+out/
+
+# Editor state
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local overrides
+*.local.*

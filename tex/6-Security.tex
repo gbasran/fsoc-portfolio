@@ -1,0 +1,89 @@
+\documentclass[12pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{times}
+\usepackage{parskip}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\geometry{margin=1in}
+
+\definecolor{accent}{HTML}{8B3A2F}
+\titleformat{\section}{\Large\bfseries\color{accent}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.8em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[L]{\small Operation fsoc / 6 Security}
+\fancyfoot[R]{\small \thepage}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+\begin{document}
+
+\begin{center}
+{\LARGE\textbf{Security Posture of This Repository}}\\[4pt]
+{\large Operation fsoc: Case Study}\\[6pt]
+Gurmann Basran
+\end{center}
+
+\section{What this repository is, and is not}
+
+This repository is a case study, not a runbook. Its purpose is to document the engineering process behind a security-focused infrastructure project in enough detail to be useful to another engineer, a hiring manager, or an evaluation reviewer looking at my work, while publishing as little as possible about the underlying system itself.
+
+A case study answers ``how did you think about this problem?'' A runbook answers ``what exactly did you configure?'' I am publishing the first one. The second one lives in a private planning directory alongside the live system it describes, and it is going to stay there.
+
+The redaction philosophy I have applied across all six documents is simple. Everything that could plausibly help an attacker fingerprint, target, or exploit my specific deployment has been kept out. Everything that communicates the reasoning, the methodology, and the design principles has been kept in.
+
+\section{What is deliberately out}
+
+\begin{itemize}[leftmargin=18pt,itemsep=2pt]
+  \item Specific product names, for any tool, at any layer.
+  \item Category-level descriptions narrow enough that the product behind the category is inferable. No ``crowd-sourced behavioral defense,'' no ``modern UDP VPN,'' no ``recursive DNS resolver with a chained filter,'' no ``open-source hypervisor with storage replication'' phrasing. The writeup stays above the layer where a reader familiar with the field could name the product.
+  \item Specific version numbers, for any tool, anywhere.
+  \item Specific counts of inbound ports, outbound ports, or per-port service identity.
+  \item Specific architectural detail beyond ``trust zones exist and have policies between them.'' Exact subnets, VLAN tags, inter-zone rule counts, zone-to-zone permission matrices, DNS path internals, and service placement are not in the writeup.
+  \item Real IP addresses, hostnames, MAC addresses, or domain names.
+  \item Real firewall rule IDs, API user names, SSH key identifiers, certificate subject names, or credential-file paths.
+  \item Contents of the operational \texttt{vault/} directory: keys, TLS private keys, backup-encryption recipients, provisioning secrets.
+  \item Specific notification endpoints, upstream DNS provider names, upstream VPN provider names, domain registrar, ISP name, or certificate issuer.
+  \item The geographic location of the hardware beyond country level.
+  \item Script snippets, heuristic thresholds, detection timing, script-to-layer mapping, or the protocol-specific primitives each script reads. Scripts are described at the goal level only.
+  \item Details of the phases that involve offensive capability (the physical-security phase, the advanced-track phase) beyond a generic mention that they exist.
+  \item A catalogue of any physical-security tooling kit: hardware model names, firmware versions, serial numbers.
+\end{itemize}
+
+\section{What is deliberately in}
+
+\begin{itemize}[leftmargin=18pt,itemsep=2pt]
+  \item The motivation for the project and the identity of the person running it.
+  \item The threat-model structure, including the assume-breach scenario table with blast-radius limits and detection signals at the category level, and the definitions I use for severity categories.
+  \item The finding-with-traceability audit methodology, without the contents of any specific findings.
+  \item Script design principles and the common patterns across every script in the set, at the goal level.
+  \item Integration traps at the ``class of trap'' level, without the specific tool names that would help someone fingerprint my stack.
+  \item My professional identity: name, institution, country, the fact that this is a personal project of mine.
+\end{itemize}
+
+The test I apply when deciding whether something goes in the public repo or stays in the private planning directory is: ``if this fell into the hands of an attacker, would it help them more than it has already helped me to publish it?'' The methodology and the reasoning pass that test. The specific tool names and configuration do not.
+
+\section{Responsible disclosure}
+
+If you believe any of my redactions is insufficient, meaning you have found something in this repository that meaningfully exposes the underlying deployment, please open a GitHub issue on the repo marked \texttt{security}. I take it seriously.
+
+In particular, I am interested in being told about:
+
+\begin{itemize}[leftmargin=18pt,itemsep=2pt]
+  \item Any real IP, hostname, or domain I missed during sanitization.
+  \item Any product name, version number, or configuration fragment that can be reversed to identify specific versions or patch states of my live deployment.
+  \item Any text that unintentionally confirms which of several plausible tools I use for a given layer.
+  \item Any inference chain I may have underestimated: patterns across the documents that combine to reveal more than any single document does on its own.
+  \item Any other detail whose presence I should not have allowed through the sanitization pass.
+\end{itemize}
+
+This repository is MIT-licensed, so reuse is welcome. The redacted content is not something I expect to publish in the future; the live deployment is a private security posture, not a demo.
+
+\end{document}

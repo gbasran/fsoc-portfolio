@@ -1,0 +1,125 @@
+\documentclass[12pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{times}
+\usepackage{parskip}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\geometry{margin=1in}
+
+\definecolor{accent}{HTML}{8B3A2F}
+\titleformat{\section}{\Large\bfseries\color{accent}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.8em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[L]{\small Operation fsoc / 2 Threat Model}
+\fancyfoot[R]{\small \thepage}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+\begin{document}
+
+\begin{center}
+{\LARGE\textbf{Threat Model}}\\[4pt]
+{\large Operation fsoc: Case Study}\\[6pt]
+Gurmann Basran
+\end{center}
+
+\section{What this document is}
+
+This is the threat model I wrote before I touched the first firewall rule of the security hardening phase. It is the document I return to every time I add a new service, redraw a trust boundary, or make any change I cannot cleanly reverse. What follows is the category-level version of it; specific tool names, service names, exposed port counts, upstream provider names, and ISP identity have been deliberately stripped. The exercise itself is what I want to show, not the particular surface of my network.
+
+I am publishing this because writing a threat model was genuinely the most useful half-day of the project. Deciding what I am defending against forces me to decide what I am explicitly \emph{not} defending against, and that decision in turn tells me which phase each piece of attack surface belongs to.
+
+\section{What the model defends against}
+
+The classes of threat I am designing around:
+
+\begin{itemize}[leftmargin=18pt,itemsep=2pt]
+  \item External reconnaissance and exploitation of publicly-reachable services. The perimeter exposes a small, carefully-chosen set of inbound paths, and every one of those paths is attack surface.
+  \item Lateral movement between trust zones. If one of my devices in the home zone gets compromised (malware, drive-by, whatever), the attacker should not have a direct path into the services zone, the anonymity zone, or the offensive-learning zone. They should have to come through the same gate a legitimate request would.
+  \item A stolen device with valid credentials escalating to broad network access. Any device I carry (phone, admin workstation, portable USB) has some credentials on it. If any of them is stolen, the stolen credentials should grant a narrow slice of access, not free run of the network.
+  \item Credential theft cascading across services. A compromised cookie on one internal app should not mean compromise of every internal app; the SSO layer scope has to be right. An exfiltrated API token should be scope-locked to the minimum it needs.
+  \item Passive surveillance of the queries leaving the network. The resolution path for every name lookup in the network is chained so that plaintext queries never leave the site.
+  \item Resource-exhaustion denial-of-service coming from inside (runaway logs, unbounded growth) or outside (flooding the perimeter).
+  \item Single-host log tampering that hides post-compromise activity. The full off-host log forwarding piece is still in progress; the mitigations that do not require new infrastructure land first.
+\end{itemize}
+
+\section{What the model explicitly does not defend against}
+
+A threat model with no exclusions is a fantasy. These are the risks I have decided not to address yet, and each of them is assigned either to a later phase or to the residual-risk column. The point of naming them is so I do not accidentally trick myself into thinking the system is hardened against something it is not.
+
+\begin{itemize}[leftmargin=18pt,itemsep=2pt]
+  \item \textbf{Physical access to the hardware.} Boot from external media, cold-boot attack against memory, drive extraction. This class is deferred to the physical-security phase, which adds BIOS-password hardening, drive-level encryption, and tamper-evidence. The interim mitigation is that the hardware lives in my apartment and I lock my door.
+  \item \textbf{Kernel-level container escapes against a zero-day.} The SIEM will detect the post-compromise activity if the signature is known; preventing the class entirely is not a realistic goal for a solo-operator project.
+  \item \textbf{ISP-level traffic analysis.} Even with encrypted name resolution, the ISP can still see I am talking to a given edge CDN. The egress-VPN phase collapses the visible set of destinations down to one encrypted tunnel, which is the mitigation; until that phase lands, the ISP still sees my destination patterns.
+  \item \textbf{Nation-state legal process against upstream providers.} Domain registrars, DNS providers, and cloud-backup services all keep records. If a state-level actor compels them, the records are visible. The mitigation is encryption-at-rest for anything personal plus the acceptance that this is residual risk for any system hosted on rented infrastructure anywhere.
+  \item \textbf{Total power loss, fire, or theft of the hardware.} Partial mitigation through off-host encrypted backup; full geographic redundancy is out of scope for a student-budget project.
+  \item \textbf{Admin-workstation compromise.} Browser RCE, operating-system malware, anything that owns the machine I use for administrative access. Partial mitigations: per-host SSH keys with passphrases (so workstation compromise does not automatically mean every-host compromise) and second-factor on the secrets vault. Full mitigation would require either an air-gapped admin workstation or a hardware second-factor on every SSH session; I do not have either yet.
+\end{itemize}
+
+\section{Assume-breach scenarios}
+
+The part of the threat model that actually drives design decisions is the assume-breach table. For every trust boundary I care about, I wrote down what happens if it gets crossed: the blast-radius limit, and how I would detect the event. A new component does not get deployed until I can fill in both columns for it.
+
+The rows below are described at the abstraction level that matters for the design discipline, with the specific services and protocols generalized.
+
+\begin{longtable}{|p{4.5cm}|p{5cm}|p{5cm}|}
+\hline
+\textbf{Scenario} & \textbf{Blast-radius limit} & \textbf{Detection signal} \\
+\hline
+A remote-access credential is extracted from a device I own. &
+The credential is scoped narrowly at the perimeter: only the services that device actually needs, nothing else. Revoking the credential is a single action at the firewall. &
+SSO anomaly signal (failed second-factor, or successful connect from an unexpected location), plus a real-time push alert. \\
+\hline
+A device inside the home zone is compromised. &
+The inter-zone firewall policy blocks direct access to the services zone. Any request from the home zone has to come through the same gate a public request would: SSO with second-factor. &
+Behavioral-defense signatures on rate-limit and scan patterns; canary-token trip (deferred phase). \\
+\hline
+A container on the services host is popped. &
+Capability drops, isolated container networking, and per-service egress controls mean the attacker cannot reach the home, anonymity, or offensive zones directly. The SIEM is watching while they try. &
+Off-host log forwarding (deferred phase). \\
+\hline
+The secrets vault master credential is exfiltrated. &
+Second-factor still gates access to the vault. The vault is not reachable from the WAN. Daily encrypted backups with a rotating encryption recipient mean an attacker cannot quietly delete the contents without detection. &
+SSO audit log entries on abnormal vault access. \\
+\hline
+An API credential used by one of the internal services is exfiltrated. &
+The credential is scope-locked to exactly what the service needs (the minimum verb on the minimum resource). Upstream audit alerts fire on any zone or account change. Rotation is a one-command action. &
+Upstream provider's audit log, plus the watchdog that re-reads the credential's scope periodically. \\
+\hline
+The firewall itself is destroyed. &
+Off-host encrypted config backup is kept current; a restore completes in about 15 minutes. An emergency-management IP on a separate physical NIC lets me reach the hypervisor without routing through the firewall. &
+An out-of-band watchdog running on a different physical host alerts after a short window of unreachability. \\
+\hline
+\end{longtable}
+
+The pattern is what matters: every row pairs a containment bound with a detection. I do not accept a row that says ``the attacker would be in a lot of places.'' I do not accept a row that says ``we would figure it out eventually.'' If I cannot fill in both columns, the component does not deploy.
+
+\section{Severity categories}
+
+The audit that came out of this threat model used four severity categories. These are my working definitions; they are not CVSS and I am not pretending they are. They are good enough for an individual operator to prioritize a backlog.
+
+\begin{itemize}[leftmargin=18pt,itemsep=4pt]
+  \item \textbf{Critical.} An attacker on the internet, or on a compromised adjacent host, could reach full compromise in minutes. Examples in this audit included default authentication modes on a service that should have had them disabled, an administrative surface reachable without encryption, and a credential whose scope was broader than anything actually using it required.
+  \item \textbf{High.} A breach of one layer would pivot or escalate with no friction. Examples included a trust zone with an allow-all rule, a service-level policy that passed all traffic where it should have passed a narrow list, and cluster-management services trusting the wrong set of hosts.
+  \item \textbf{Medium.} Violations of least privilege or surface-exposed state that are not directly exploitable today but should not be left lying around. Stale configuration referencing retired addresses, overly broad bind addresses on internal services, unencrypted service-to-service traffic where encryption was practical, container supervisors holding privileges they did not actually need.
+  \item \textbf{Low.} Defense-in-depth items whose mitigation cost is low enough to land anyway. Amplification vectors, default admin credentials on hardware that is already behind the perimeter, service banners leaking version strings, legacy accept rules for retired subnets.
+\end{itemize}
+
+There is also a \textit{red-team additional} category I ended up creating for findings that came out of a second, more adversarial review a week after the first pass. Those tended to be the interesting ones. The first pass catches the obvious configuration gaps; the second pass catches the things that require a little more creative thinking.
+
+\section{How the model is kept current}
+
+The threat model is not a one-time document. I re-read it at the start of every new phase, before I touch anything. If the phase adds a new service, a new trust zone, or a new boundary, the relevant sections get updated in the same commit that adds the component. The assume-breach table is gate-checked on every deploy: a component that cannot name its blast-radius limit and its detection signal does not get deployed.
+
+The full findings table, which lives in the private planning directory rather than in this public writeup, is linked by ID to the commit that closed each finding. There is no ``fix it later'' entry without a phase assignment. The paper trail is the point; months from now, when I am asking myself why a particular rule exists, the commit message and the finding ID should give me the answer without having to rebuild the reasoning from scratch.
+
+\end{document}
