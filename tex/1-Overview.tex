@@ -30,7 +30,7 @@
 {\LARGE\textbf{Operation fsoc}}\\[4pt]
 {\large Case Study of a Defense-First Security Engineering Project}\\[6pt]
 Gurmann Basran\\
-\small Prepared 2026-04-16. Updated as the project progresses.
+\small Prepared 2026-04-16. Revised 2026-06-04 (rev.\ 2). Updated as the project progresses.
 \end{center}
 
 \section{What this is}
@@ -39,7 +39,7 @@ Operation fsoc is the name I gave to the multi-phase security engineering projec
 
 This document is the public face of the project. It is a case study, not a runbook. Specific products, version numbers, exact architectural details, IP addresses, hostnames, domain names, rule IDs, script internals, and credential paths have all been deliberately kept out of this writeup. So have narrow category-level descriptions that would narrow a tool choice to one or two likely candidates. The reason is simple: publishing how I think is useful to another engineer, a hiring manager, or an evaluation reviewer; publishing the shape of my specific stack would primarily serve an attacker looking for known-version vulnerabilities. I have kept the methodology and the reasoning and stripped almost everything else.
 
-The short version of what I did. I built layered defensive infrastructure across two physical machines, documented a per-phase threat model, closed every audit finding with a trace from the finding ID to the commit that fixed it, and wrote a set of production monitoring and auto-healing scripts that keep the whole thing running while I am at class. The companion PDFs in this repository describe the methodology, the threat model, the script design patterns, and the integration lessons learned, in each case at a level of abstraction that a reader can learn from without extracting my configuration.
+The short version of what I did. I built layered defensive infrastructure across two physical machines, documented a per-phase threat model, ran a structured adversarial audit of the whole result, closed every fix-required finding with a trace from the finding ID to the commit that fixed it, ran a second hardening pass on top of that, and wrote a set of production monitoring and auto-healing scripts that keep the whole thing running while I am at class. The most recent milestone took the machine I administer all of this from, which used to be the weakest-reasoned part of the system, and rebuilt it under the same discipline as the infrastructure. The companion documents in this repository describe the methodology, the threat model, the script design patterns, the integration lessons, and that workstation migration, in each case at a level of abstraction that a reader can learn from without extracting my configuration.
 
 \section{Why I built it}
 
@@ -53,13 +53,15 @@ The system is physically compartmentalized across two machines. One is always on
 
 The logical network is segmented into multiple trust zones. There is a zone for everyday home use, a zone for self-hosted services and their admin plane, a zone for anonymity-focused activity, and a zone for offensive learning. Each zone has its own policy. The offensive zone can reach the internet for training labs but cannot reach any of the other zones; a mistake in a CTF box cannot become a mistake on my password vault.
 
+There is a third role in the picture, and for most of the project it was the part I had thought about the least: the workstation I actually sit at to administer everything. A fortress run from a soft machine is not a fortress; the workstation holds operator access, so it belongs inside the threat model rather than in front of it. The most recent milestone rebuilt that machine, and it gets its own companion document because the reasoning is worth more than the parts list.
+
 I am not including a more detailed network diagram or zone map in this public writeup. The exact segmentation, inter-zone rule structure, and service placement are the kind of detail that is useful primarily to someone trying to target the system, and they are not required to evaluate whether the design is reasonable.
 
 \section{Tools}
 
 I am not listing the tools I used, at any level of specificity. A public category-by-category breakdown is still narrow enough that a reader familiar with the field can often reduce each slot to one or two likely products, and the combination of those reductions is a plausible stack fingerprint that I would rather not put on the internet next to my real name.
 
-What is happening inside the box is the usual stuff. There is packet filtering at the perimeter and between zones, there is detection that looks at traffic and at hosts, there is encrypted remote access for devices I own, there is identity-gated access to anything I care about, there is a place for secrets that is not on any individual machine, there is a layered path for name resolution, and there is a logging backbone that the detection layer watches. Each slot is filled by an open-source or community-maintained tool that was chosen against at least one alternative, with the reasoning documented in my private planning directory.
+What is happening inside the box is the usual stuff. There is packet filtering at the perimeter and between zones, there is detection that looks at traffic and at hosts, there is encrypted remote access for devices I own, there is identity-gated access to anything I care about, there is a place for secrets that is not on any individual machine, there is a layered path for name resolution, there is a logging backbone that the detection layer watches, and there is a fleet-wide authentication scheme that hands each device a short-lived signed identity instead of a long-lived static key it would otherwise carry forever. Each slot is filled by an open-source or community-maintained tool that was chosen against at least one alternative, with the reasoning documented in my private planning directory.
 
 If you are reading this to evaluate whether the design is reasonable, what matters is the shape of the whole, not which specific product fills each slot. If you are reading this because you build something similar and you are curious which tool I picked for a given layer, I am happy to talk in a non-public channel.
 
@@ -75,20 +77,23 @@ The project lives in a private planning directory with one document per phase an
 
 This is deliberate, because the cost of a bad change on a live system is significant. Early in the project I sequenced a dangerous reconfiguration before the safety net was in place and nearly caused a multi-hour internet outage. The refined phase-ordering principle that came out of that incident is in the companion document on hardening methodology. The short version: safe changes first, then reversible changes, then dangerous changes with a dead-man SSH session open, then cosmetic cleanup. Every phase is gate-checked; an unchecked box blocks the phase from starting.
 
+The work is grouped into milestones, and the same loop runs inside each one. The infrastructure build came first. Then a structured audit went over the whole result as an adversary would, across several security domains, and produced close to a hundred findings, each with a stable ID and a tag for the action it demanded. A remediation milestone closed the findings that needed a change. A hardening milestone layered a second set of requirements on top of the closed findings. The current milestone is the workstation migration. The loop has now run enough times that I trust it, which is its own kind of result.
+
 \section{Status}
 
-I am not publishing the granular phase status because the phase IDs themselves would help someone trying to reverse-engineer what I have and have not hardened yet. At a high level: the foundational network work is complete; the first pass of hardening is complete; a second pass is in progress; the offensive learning phases are planned and have not started.
+I am not publishing the granular phase status because the phase IDs themselves would help someone trying to reverse-engineer what I have and have not hardened yet. At a high level: the foundational network work is complete; a structured multi-domain audit has been run and every fix-required finding closed with traceability; a remediation pass and a second hardening pass are complete; the migration of the operator workstation onto a native, compartmentalized, hardened platform is the work in progress; a centralized off-host logging spine and an egress-VPN privacy layer are the next two security milestones and research on both is done; the offensive learning phases are planned and have not started.
 
 \section{Companion documents}
 
-The rest of the case study is split across five documents. Read them in order.
+The rest of the case study is split across six documents. Read them in order.
 
 \begin{enumerate}[leftmargin=18pt,itemsep=2pt]
   \item 2-ThreatModel.pdf, which sets up what I defend against, what I explicitly do not, and the assume-breach scenarios I gate every critical change on.
-  \item 3-HardeningMethodology.pdf, which describes the finding-with-traceability audit loop and the rule for how I sequence changes.
+  \item 3-HardeningMethodology.pdf, which describes the finding-with-traceability audit loop, how it scaled to a fleet-wide review, and the rule for how I sequence changes.
   \item 4-ScriptsShowcase.pdf, which describes the production monitoring automation at the design-goal level, without code and without layer-specific mechanism.
   \item 5-LessonsLearned.pdf, which collects the integration traps I hit, generalized to the class-of-trap level.
   \item 6-Security.pdf, which states the redaction posture of this repository and explains how to tell me if you find a leak.
+  \item 7-WorkstationMigration.pdf, which describes bringing the operator workstation under the same threat model as the infrastructure, and the residual risk it does and does not close.
 \end{enumerate}
 
 If you are reading to evaluate my work, I would start with 2-ThreatModel and 5-LessonsLearned. They are the two documents that most directly show how I think.

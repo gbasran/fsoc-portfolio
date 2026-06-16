@@ -32,8 +32,19 @@ check:
 	@echo "== real domains =="
 	@! grep -rIE 'phuturum\.(me|lan)' tex/ || (echo "LEAK"; exit 1)
 	@echo "   clean"
-	@echo "== specific product names =="
-	@! grep -rIEi '\b(OPNsense|Suricata|CrowdSec|Wazuh|WireGuard|Unbound|AdGuard|Pi-hole|Quad9|NextDNS|Cloudflare|Mullvad|ProtonVPN|Rogers|Vaultwarden|Bitwarden|Authelia|Authentik|Proxmox|VMware|ESXi|Nginx|Caddy|Traefik|Watchtower|OpenMediaVault|OMV|autossh|fail2ban)\b' tex/ || (echo "LEAK"; exit 1)
+	@echo "== specific product names (infrastructure) =="
+	@! grep -rIEi '\b(OPNsense|Suricata|CrowdSec|Wazuh|WireGuard|Unbound|AdGuard|Pi-hole|Quad9|NextDNS|Cloudflare|Mullvad|ProtonVPN|Rogers|Vaultwarden|Bitwarden|Authelia|Authentik|Proxmox|VMware|ESXi|Nginx|Caddy|Traefik|Watchtower|OpenMediaVault|OMV|autossh|fail2ban|Thinkst)\b' tex/ || (echo "LEAK"; exit 1)
+	@echo "   clean"
+	@echo "== specific product names (workstation + desktop stack) =="
+	@# Added with the rev.2 update (workstation-migration milestone). Same reasoning as
+	@# the infrastructure list: naming the distro, compositor, terminal, shell, editor,
+	@# multiplexer, file manager, theme, bootloader, or filesystem narrows the stack to a
+	@# fingerprint. Common-word tool names (a pager, a finder, a top-clone) are left out of
+	@# the prose entirely rather than listed here, because their names would false-positive.
+	@! grep -rIEi '\b(EndeavourOS|Arch Linux|Hyprland|hyprctl|Hyprlock|hypridle|hyprbars|Wayland|Waybar|Fuzzel|Mako|Zellij|Yazi|Helix|Neovim|Starship|Atuin|Kitty|Catppuccin|Kvantum|Snapper|PipeWire|NVIDIA|Lazygit|Lazydocker|mpvpaper|swww|SDDM|Plymouth|Spicetify|Vesktop|Vivaldi|MangoHud|Fastfetch|sheldon|Thunar|Nautilus|Dolphin|PCManFM|Docker|containerd|runc|GNU Stow|Stow|Zsh|systemd-boot|btrfs|LUKS|ripgrep|zoxide|Visual Studio|VS Code)\b' tex/ || (echo "LEAK"; exit 1)
+	@echo "   clean"
+	@echo "== fleet hostnames =="
+	@! grep -rIEi '\b(shodan|optiplex|latitude|dev-fortress|docker-services)\b' tex/ || (echo "LEAK"; exit 1)
 	@echo "   clean"
 	@echo "== em-dashes =="
 	@! grep -rIE -- '---' tex/ || (echo "LEAK: em-dashes still present"; exit 1)

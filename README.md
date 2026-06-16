@@ -14,8 +14,11 @@ What is here is the engineering process: the threat model structure, the audit m
 | 4 | [`4-ScriptsShowcase.pdf`](4-ScriptsShowcase.pdf) | Production monitoring automation at the goal level (no code, no layer mapping) |
 | 5 | [`5-LessonsLearned.pdf`](5-LessonsLearned.pdf) | Integration traps, generalized to the class-of-trap level |
 | 6 | [`6-Security.pdf`](6-Security.pdf) | What is redacted, what is published, how to report a leak |
+| 7 | [`7-WorkstationMigration.pdf`](7-WorkstationMigration.pdf) | Bringing the operator workstation under the same threat model; the residual risk it does and does not close |
 
-LaTeX sources for all six are in [`tex/`](tex/).
+LaTeX sources for all seven are in [`tex/`](tex/).
+
+*Revised 2026-06-04 (rev. 2): updated for the audit, remediation, and second hardening milestones, the move to certificate-based fleet auth and deployed canary tokens, and the operator-workstation migration (document 7). The sanitization gate was extended to cover the workstation and desktop stack.*
 
 ## Author
 

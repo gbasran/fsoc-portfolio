@@ -29,7 +29,8 @@
 \begin{center}
 {\LARGE\textbf{Hardening Methodology}}\\[4pt]
 {\large Operation fsoc: Case Study}\\[6pt]
-Gurmann Basran
+Gurmann Basran\\
+\small Revised 2026-06-04 (rev.\ 2).
 \end{center}
 
 \section{Why I wrote one}
@@ -48,7 +49,7 @@ The red-team pass enumerates every exposed service, every allow-all rule, every 
 
 \subsection{Step 2: Log every finding with a stable ID}
 
-Each observation becomes a finding of the form \texttt{\{ID, description, severity\}}. The ID is stable for the lifetime of the project; it appears in commit messages, phase document headers, and the audit trail. Severity is one of Critical, High, Medium, or Low, using the definitions in the Threat Model document.
+Each observation becomes a finding of the form \texttt{\{ID, description, severity\}}. The ID is stable for the lifetime of the project; it appears in commit messages, phase document headers, and the audit trail. Severity is one of Critical, High, Medium, or Low, using the definitions in the Threat Model document. In the later fleet-wide audit I added an action tag to each finding as well, because by then the question I needed answered was not only ``how bad is this'' but ``what do I actually do with it.''
 
 I deliberately do not fix anything at this step. The goal is to get the whole list written down before I start making judgment calls, because the prioritization step makes more sense with the whole picture in view.
 
@@ -72,7 +73,7 @@ This is also where I learned that 24 hours of soak between a hardening phase and
 
 \section{The finding table in practice}
 
-The real project has several dozen findings spread across Critical, High, Medium, Low, a red-team-additional category from a second pass, and a handful of additions from subsequent passes. I am not publishing the content of the findings in this document because they map to specific services and configuration, and the contents are attacker-useful. The \emph{structure} of the table looks like this:
+I have run this loop twice at very different scales. The first time was an early hardening pass that produced several dozen findings spread across Critical, High, Medium, Low, and a red-team-additional category from a second, more adversarial review. The \emph{structure} of that table, with the contents stripped because they map to specific services, looks like this:
 
 \begin{tabular}{|l|l|p{4cm}|p{4cm}|}
 \hline
@@ -96,7 +97,11 @@ RT-A & High (red-team) & DNS security & Mid sub-phase of hardening pass \\
 \hline
 \end{tabular}
 
-The point of showing the structure rather than the contents is that the structure is what transfers to another project. The specific findings are project-specific; the methodology is not.
+The second time, I ran the loop across the whole fleet as one structured milestone, and that is where the method earned its keep. I split the review into separate domain passes, one per area of the system, each pass observe-only and each finding carrying command-output evidence rather than a hunch. That audit produced close to a hundred findings across seven domains: authentication, container security, firewall and network policy, the integrity of the scripts and their scheduling, the monitoring and detection chain, the state of the documentation against reality, and dead or dangling references left behind by earlier work. By then a severity letter was not enough to drive the work, so every finding also got an action tag: fix it now, improve it, remove it, or defer it as accepted residual risk. The split came out roughly a third fix, a little under half improve, and the remainder split between remove and defer.
+
+The fix-tagged findings are the ones that became the next milestone. There were twenty-nine of them, and the remediation milestone closed every one. The discipline I most want to show is what ``closed'' means here: each fix-required finding is traced from its ID through the phase that owned it, the plan that executed it, and the verification test that proved it, and the milestone did not get marked done until that trace read twenty-nine of twenty-nine satisfied. The improve-tagged findings became a separate hardening milestone layered on top, and the defer-tagged ones went into the threat model's residual-risk column with a reason attached, not into a void.
+
+The point of showing the structure rather than the contents is the same at both scales: the structure is what transfers to another project. The specific findings are project-specific; the methodology is not.
 
 \section{Phase ordering: safe changes first}
 
@@ -137,6 +142,6 @@ If any box is unchecked, the phase does not begin. Not tomorrow; not after I gra
 
 The difference between a system that looks hardened and a system that actually is hardened is traceability. When something breaks three months from now, the right question is not ``what did we do?'' It is ``which finding did this change close, and what was the rollback plan?'' The answer has to exist in writing, in the commit log, still findable. This methodology is how you make that answer exist.
 
-The second reason to do this is that hardening work, like any skill, improves with practice. The only way to improve is to make the process legible enough to critique afterward. A methodology I can read back is a methodology I can improve; a set of ad-hoc changes I made on a Tuesday at 11 PM is not.
+The second reason to do this is that hardening work, like any skill, improves with practice. The only way to improve is to make the process legible enough to critique afterward. A methodology I can read back is a methodology I can improve; a set of ad-hoc changes I made on a Tuesday at 11 PM is not. Running the same loop a second time, at fleet scale, and watching it close twenty-nine of twenty-nine fix-required findings with a verifiable trace, is the closest thing to proof that the legibility was worth the bureaucracy.
 
 \end{document}

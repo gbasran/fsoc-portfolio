@@ -29,12 +29,13 @@
 \begin{center}
 {\LARGE\textbf{Scripts Showcase}}\\[4pt]
 {\large Operation fsoc: Case Study}\\[6pt]
-Gurmann Basran
+Gurmann Basran\\
+\small Revised 2026-06-04 (rev.\ 2).
 \end{center}
 
 \section{What the project ships}
 
-A small set of production monitoring and auto-healing scripts runs across the infrastructure, totalling a little over a thousand lines of Bash. Each one has a specific detection target, an alert path, and a recovery action. This document describes each at the goal level only. What I specifically do not include: the code itself, the layer each script watches, the tool it is integrating with, the thresholds it triggers at, the specific invariants it verifies, and the mechanism it uses to alert. All of those details would help someone trying to evade detection against my specific deployment, and I do not think the educational value of publishing them outweighs that cost. What is preserved is the reasoning, which is what transfers to another project anyway.
+A set of production monitoring and auto-healing scripts runs across the infrastructure and, since the most recent milestone, the workstation too. It is well over a thousand lines of Bash and it grows with the system. Each script has a specific detection target, an alert path, and a recovery action. This document describes each at the goal level only. What I specifically do not include: the code itself, the layer each script watches, the tool it is integrating with, the thresholds it triggers at, the specific invariants it verifies, and the mechanism it uses to alert. All of those details would help someone trying to evade detection against my specific deployment, and I do not think the educational value of publishing them outweighs that cost. What is preserved is the reasoning, which is what transfers to another project anyway.
 
 \section{Defensive-chain invariant checker}
 
@@ -60,17 +61,37 @@ Once a day, the infrastructure produces a summary of the previous twenty-four ho
 
 Unattended image updates are disabled. The watcher runs in monitor-only mode and generates an alert when new images are available; I apply updates manually after reading the release notes. The design rationale is that supply-chain attacks against public image registries have happened more than once in recent years, and unattended updates convert every image in the registry into a one-hop attack surface. The design lesson is that the default ``auto-update everything'' posture trades a small, bounded cost (manual review time) for an unbounded one (a catastrophic supply-chain event), and I choose the bounded cost.
 
-\section{Configuration export via least-privilege API}
+\section{Supply-chain forensic sweep}
 
-One of the infrastructure components holds the configuration that would be painful to lose. A daily automated job exports that configuration through the component's API using a read-only, source-locked, scope-minimal credential. The export is checksummed and pushed to off-host encrypted storage. The design lesson is that backup paths should use the least privilege credential the job can possibly function with, because a backup credential that leaks should only ever enable reading what the backup already reads.
+The update watcher above is the standing posture; this is what runs when a supply-chain attack actually breaks in the wild. When a poisoned-package or poisoned-image campaign hits the news, the question I need answered fast, and with evidence, is ``did this reach us?'' The sweep walks every host and container against a curated, version-controlled list of indicators (attacker domains, callback addresses, the signatures of the poisoned artifacts), cross-checks anything I fetched locally against the upstream published hashes, and pushes every confirmed-malicious indicator straight into perimeter DNS and firewall blocks so the same campaign cannot land later. The design lesson is that ``we were not affected'' is only a credible sentence when it is the output of a re-runnable host-by-host check against a maintained indicator list, not a feeling; and every confirmed indicator should become an enforced block in the same pass, not a note to action later.
+
+\section{Configuration-drift detector}
+
+A security control here depended on a static mapping: an internal name-resolution layer pointed at fixed per-service addresses. The catch is that those addresses are handed out dynamically and can be reshuffled whenever the services restart, at which point the mapping silently points at the wrong place and the control it underpins quietly stops working. This script continuously compares the declared mapping against live runtime state and alerts the moment they diverge, before the divergence does any damage. The design lesson is that any invariant resting on a dynamically-assigned identifier is a latent failure waiting for the next restart; either pin the identifier or run a reconciler that treats drift as an alertable condition.
+
+\section{Tamper-baseline guard}
+
+A tamper-detection watchdog compares live counts of sensitive objects (firewall rules, tunnel peers, resolver overrides) against an expected baseline and alerts when they differ. The problem is that every legitimate change I make also moves those counts, so without a forcing function the watchdog cries wolf on my own work until I am trained to ignore it, and alert fatigue is exactly how a real change slips past. This script makes ``I changed this on purpose'' a single explicit step that re-derives the expected counts from the live source of truth and redistributes the new baseline. The design lesson is that a change-detection alarm is only as useful as its ability to tell authorized change from tampering; bake the baseline refresh into the change workflow so the alarm stays meaningful instead of becoming noise.
+
+\section{Operator-intervention channel}
+
+During a long autonomous maintenance run, most steps are mechanical, but a handful need a human: approving a privileged action, doing a physical step, or confirming that an alert actually reached my phone. This is a dedicated two-way push channel for exactly those moments. The automation pings me with a templated message (what is needed, why, whether it is blocked, how to unblock it, and when), and I answer on the same channel, so the run does not silently stall at the first prompt and I am not chained to the keyboard for the parts that do not need me. The design lesson is that full autonomy is a fiction for fortress-grade work; design the human-in-the-loop in explicitly, with a crisp escalation channel, rather than pretending the run will never need a decision.
+
+\section{Detection-layer self-test}
+
+Most of a good monitoring fabric is silent by design; it only speaks when something is wrong. That creates a trap: silence could mean ``everything is healthy'' or it could mean ``the detector died three weeks ago and nobody noticed.'' This script resolves the ambiguity on demand. It runs every monitor once and emits a unique, identifiable marker down each notification channel, so I can confirm end to end that every detection path and every subscription is genuinely alive. The design lesson is that silence-by-design is not the same as healthy; a detection layer you cannot prove is alive is one you do not actually have, so build a proof-of-life that exercises each channel distinctly.
+
+\section{Self-healing workstation supervisor}
+
+A workstation only earns the title ``daily driver'' when it recovers from its own faults without me babysitting it. The most recent milestone gave the workstation a manifest that declares every desktop component's expected role, health check, resource budget, and rollback path; a validator that reads live state against that manifest; a constrained repair planner that may only take pre-approved corrective actions; supervised restarts of the user-session services; and a pre-flight gate with a known-good visual baseline to fall back to. The design lesson is that reliability is an engineered property and not a hope; encode the desired state as a checkable manifest, give the system a bounded set of safe self-repairs, and gate every change behind health and visual-regression checks so the self-healing can never make things worse than it found them.
 
 \section{Remote workstation wake}
 
-From a trusted remote context, a script on an always-on inside host wakes a physical workstation that is otherwise asleep. Combined with the outbound reverse tunnel below, this is the ``reach my desktop while I am away'' workflow. The design lesson is that the power-on signal should originate from a host already trusted inside the perimeter, with the remote operator reaching that trusted host through existing authorized access; no inbound port to the workstation is ever exposed.
+From a trusted remote context, a script on an always-on inside host wakes a physical workstation that is otherwise asleep. Combined with the encrypted outbound path described below, this is the ``reach my desktop while I am away'' workflow. The design lesson is that the power-on signal should originate from a host already trusted inside the perimeter, with the remote operator reaching that trusted host through existing authorized access; no inbound port to the workstation is ever exposed.
 
-\section{Outbound-only reverse tunnel}
+\section{Outbound-initiated encrypted path}
 
-A persistent outbound-initiated tunnel from a portable device to an always-on inside host, with automatic reconnection, lets the portable device be reached from the inside host on a chosen port. The perimeter never exposes an inbound port to that device. The design lesson, which is probably my favourite pattern in the whole project, is that every path that has to exist should be outbound from the more-trusted side of the boundary, never inbound from the less-trusted side. Mobile devices reach home; home does not expose itself to the internet to make that work. The same reasoning underpins modern zero-trust networking.
+I want to reach my home network and my devices from anywhere, and I want to do it without exposing a single inbound port from the less-trusted side of the boundary. I built the first version of this as an application-layer reverse tunnel: a portable device held a persistent outbound connection, with automatic reconnection, to an always-on inside host, and the inside host could then reach the device back down that connection. It worked. I later retired it and replaced it with a modern encrypted tunnel that the device still initiates outbound, because the encrypted tunnel gives the same reachability with stronger cryptography, a cleaner trust model, and one fewer long-running daemon to babysit. The implementation changed; the principle did not, and it is probably my favourite pattern in the whole project: every path that has to exist should be outbound from the more-trusted side of the boundary, never inbound from the less-trusted side. Mobile devices reach home; home does not expose itself to the internet to make that work. The design lesson is that when a pattern is right, you keep the pattern and upgrade the mechanism under it; the same reasoning underpins modern zero-trust networking.
 
 \section{Design patterns common to every script}
 
@@ -84,6 +105,7 @@ Some practices show up across every script in the set. None of them are innovati
   \item \textbf{Idempotent auto-heal.} Fix actions are safe to run repeatedly against an already-healthy system.
   \item \textbf{Least-privilege credentials per script.} Each script uses a different account, scoped to exactly what that script needs.
   \item \textbf{Tested with deliberate breakage.} Every alert path was validated by manually triggering its failure condition before the script went into production. An untested alert path is an alert path that is not there.
+  \item \textbf{Proof-of-life over assumption.} A silent detector is assumed dead until proven otherwise; the self-test exists so I can prove the whole chain alive on demand rather than trusting that no news is good news.
 \end{enumerate}
 
 \end{document}

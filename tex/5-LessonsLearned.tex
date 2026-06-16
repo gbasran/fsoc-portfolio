@@ -29,14 +29,15 @@
 \begin{center}
 {\LARGE\textbf{Lessons Learned}}\\[4pt]
 {\large Integration Traps from the Project}\\[6pt]
-Gurmann Basran
+Gurmann Basran\\
+\small Revised 2026-06-04 (rev.\ 2).
 \end{center}
 
 \section{Why this document exists}
 
 Each of the traps in this document cost me real debugging time, somewhere between one and eight hours each, and in one case an evening where I nearly lost internet for my whole apartment. None of them were findable by reading the official documentation of the tools involved ahead of time. Every one of them generalizes beyond my specific project, which is why I have written each one at the \emph{class of trap} level. Specific tool names, config paths, and version strings have been kept out because they are attacker-useful fingerprints; what is preserved is the pattern itself.
 
-The point of keeping a document like this is so that future-me does not re-discover the same lesson on a Tuesday at 2 AM. The secondary point is that if you are reading this and you work with anything in the same category of tool, one of these might save you an afternoon.
+The point of keeping a document like this is so that future-me does not re-discover the same lesson on a Tuesday at 2 AM. The secondary point is that if you are reading this and you work with anything in the same category of tool, one of these might save you an afternoon. This revision adds the traps from the second hardening pass and the workstation migration to the ones from the original build.
 
 \section{Do not re-serialize a config file when the tool treats it as a byte-exact artifact}
 
@@ -102,9 +103,49 @@ The point of keeping a document like this is so that future-me does not re-disco
 
 \textbf{Why this generalizes.} Command-line option matrices are almost never documented exhaustively. The only reliable way to know whether a combination works is to try it and observe.
 
+\section{A privilege-elevation helper can be gated by a broader policy than the rule you wrote}
+
+\textbf{Class of trap.} You write a tightly-scoped authorization rule: this user may run exactly this one action on exactly this one object, and nothing else. Then you reach for a convenience wrapper to actually run the privileged operation, and the wrapper authenticates against a different, generic policy action, the broad ``run anything as administrator'' gate, instead of the narrow rule you wrote. Your scoped rule becomes dead code and the operation is granted the full privilege you were trying to avoid. It passes a casual review because the narrow rule is sitting right there in the config, looking correct and doing nothing.
+
+\textbf{The right path.} Drive the privileged operation through the channel that is actually evaluated against your fine-grained rule, install the rule where the policy engine truly reads it, and then write hostile negative tests that prove a wrong action and a wrong object are both denied. Authorization you have not watched fail is authorization you have not confirmed.
+
+\textbf{Why this generalizes.} Access is only ever as tight as the policy action the runtime actually evaluates, which is frequently not the one your rule names. Any time you use a convenience elevation wrapper, verify which policy gate it trips, and prove the deny cases rather than trusting that a narrow-looking rule is the enforced path.
+
+\section{Hardening one layer can silently break another; test the whole boot path}
+
+\textbf{Class of trap.} You harden one subsystem for integrity, for example making an identity or resolver file immutable so that nothing can tamper with it, and in doing so you quietly remove a degree of freedom that a different subsystem depended on, because that other subsystem legitimately needed to write the file you just locked. Nothing breaks at the moment you make the change. It breaks on the next reboot, when an automatic address-assignment client cannot write what it needs, the interface comes up with no address, and the host is unreachable for a reason that has nothing obvious to do with the hardening you applied a week earlier.
+
+\textbf{The right path.} When you lock a resource that another component writes, remove that component's need to write it rather than just denying it. Then exercise the entire cold-boot path end to end, not the steady state, because the failure mode you introduced hides until the next restart.
+
+\textbf{Why this generalizes.} Hardening changes have non-local effects; a control that improves one layer's integrity can take away something another layer was quietly relying on. Any immutability or lockdown change earns a full restart test before you call it done.
+
+\section{Choose a foundational tool by comparison, not by default}
+
+\textbf{Class of trap.} You pick a foundational, expensive-to-replace component, the kind everything else gets built on top of, because it is the popular default and it looks good in a screenshot, without comparing it against the handful of real alternatives on the dimensions that will actually matter for your use. Months and a great deal of component-specific work later, you hit a capability it does not support or an area where it has been abandoned, and switching now means forfeiting most of that sunk work.
+
+\textbf{The right path.} Before committing to any foundational stack, stop and lay out the top three to five alternatives with their explicit trade-offs, name the specific features you cannot live without and which alternatives support them natively, decide which of your priorities dominates, and choose on fit. If you cannot name three alternatives you considered and rejected, you have not researched the decision; you have defaulted into it.
+
+\textbf{Why this generalizes.} The cost of a wrong foundational choice scales with how much you build on top of it, and the cheapest moment to evaluate it is before any of that weight exists. ``It is the obvious popular pick'' is precisely the rationalization that skips the comparison that would have surfaced the disqualifying gap.
+
+\section{Restart ordering can resurrect an address collision you thought was impossible}
+
+\textbf{Class of trap.} Some components in a system claim fixed addresses while others draw addresses dynamically from the same pool. As long as the startup order is stable, the fixed claims and the dynamic draws never collide, and everything looks fine for months. Then a hard restart shuffles the startup order, a dynamically-assigned component grabs an address that a fixed-address component reserves, and whichever one starts first wins. The loser fails to come up with a misleading ``address already in use'' error that points at the wrong layer entirely.
+
+\textbf{The right path.} Guarantee uniqueness across the whole address space rather than only among the fixed assignments: put the fixed addresses outside the dynamic allocation range, audit every assignment for collisions after any change that adds a member, and re-verify the live mapping after any hard restart.
+
+\textbf{Why this generalizes.} Any system that mixes fixed and dynamic identifiers drawn from a shared pool has a latent collision that only appears under non-default startup ordering. Do not assume the startup order is stable; make uniqueness true by construction so the order cannot matter.
+
+\section{A host-only script escapes every audit scoped to the repository}
+
+\textbf{Class of trap.} You run a security audit scoped to your repository: you rewrite every script to pull secrets safely, you grep the tree for the forbidden patterns, you commit the fixes. But a script that was deployed straight to a host long ago and never copied back into version control is invisible to any search of the repository, so it sails through the audit untouched, still posting without authentication and still using the exact shortcut you just banned everywhere else, silently, for the entire window after the audit you believed was complete.
+
+\textbf{The right path.} After every repository-scoped audit, enumerate the executable files on each host's actual filesystem and diff them against the repository. Treat any host-only file as suspect: pull it back into version control, remediate it, redeploy it through the canonical pipeline, and commit. Enumerate by ``is this executable,'' not by file extension, because an extension-less script slips through a name-glob.
+
+\textbf{Why this generalizes.} The repository is not the source of truth; each host's filesystem is its own truth, and the two drift apart over time. Any audit that scopes only to the repository has a blind spot exactly the size of ``things that live only on a host,'' so the audit has to reach the host filesystem directly.
+
 \section{Meta-lesson}
 
-Every one of these cost between one and eight hours of debug time. All of them were invisible until I triggered them; none were findable by reading the official documentation ahead of time. The way you build a hardened system is by making these discoveries, writing them down, and cross-referencing them across your projects so future-you does not re-discover them at 2 AM on a Tuesday.
+Every one of these cost between one and eight hours of debug time. All of them were invisible until I triggered them; none were findable by reading the official documentation ahead of time. They span the original build, the second hardening pass, and the workstation migration, which tells me the supply of these does not run out as a project matures; it just moves to whatever layer I most recently started trusting. The way you build a hardened system is by making these discoveries, writing them down, and cross-referencing them across your projects so future-you does not re-discover them at 2 AM on a Tuesday.
 
 I keep the live version of this document in my private planning directory, with the specific tool names and config paths intact because I need them for my own debugging. The public version that you are reading is the generalized one. If any of these patterns saves you an afternoon, that is the whole point of writing them down.
 

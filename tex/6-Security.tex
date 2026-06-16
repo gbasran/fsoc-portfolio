@@ -28,7 +28,8 @@
 \begin{center}
 {\LARGE\textbf{Security Posture of This Repository}}\\[4pt]
 {\large Operation fsoc: Case Study}\\[6pt]
-Gurmann Basran
+Gurmann Basran\\
+\small Revised 2026-06-04 (rev.\ 2).
 \end{center}
 
 \section{What this repository is, and is not}
@@ -37,13 +38,14 @@ This repository is a case study, not a runbook. Its purpose is to document the e
 
 A case study answers ``how did you think about this problem?'' A runbook answers ``what exactly did you configure?'' I am publishing the first one. The second one lives in a private planning directory alongside the live system it describes, and it is going to stay there.
 
-The redaction philosophy I have applied across all six documents is simple. Everything that could plausibly help an attacker fingerprint, target, or exploit my specific deployment has been kept out. Everything that communicates the reasoning, the methodology, and the design principles has been kept in.
+The redaction philosophy I have applied across all seven documents is simple. Everything that could plausibly help an attacker fingerprint, target, or exploit my specific deployment has been kept out. Everything that communicates the reasoning, the methodology, and the design principles has been kept in.
 
 \section{What is deliberately out}
 
 \begin{itemize}[leftmargin=18pt,itemsep=2pt]
   \item Specific product names, for any tool, at any layer.
   \item Category-level descriptions narrow enough that the product behind the category is inferable. No ``crowd-sourced behavioral defense,'' no ``modern UDP VPN,'' no ``recursive DNS resolver with a chained filter,'' no ``open-source hypervisor with storage replication'' phrasing. The writeup stays above the layer where a reader familiar with the field could name the product.
+  \item The operator workstation's software stack, named at any level: the distribution, the desktop and window-management layer, the terminal and shell environment, the editor, the file manager, the bootloader, and the on-disk encryption and snapshot layout. The workstation migration is described in document 7 by its design reasoning and its threat-model effect, never by its parts list. The combination is a fingerprint of the most-privileged endpoint in the system, which is exactly the machine I least want to describe.
   \item Specific version numbers, for any tool, anywhere.
   \item Specific counts of inbound ports, outbound ports, or per-port service identity.
   \item Specific architectural detail beyond ``trust zones exist and have policies between them.'' Exact subnets, VLAN tags, inter-zone rule counts, zone-to-zone permission matrices, DNS path internals, and service placement are not in the writeup.
@@ -65,6 +67,7 @@ The redaction philosophy I have applied across all six documents is simple. Ever
   \item The finding-with-traceability audit methodology, without the contents of any specific findings.
   \item Script design principles and the common patterns across every script in the set, at the goal level.
   \item Integration traps at the ``class of trap'' level, without the specific tool names that would help someone fingerprint my stack.
+  \item The reasoning behind the workstation migration and the residual risk it does and does not close, at the design level, with the parts list left out.
   \item My professional identity: name, institution, country, the fact that this is a personal project of mine.
 \end{itemize}
 
