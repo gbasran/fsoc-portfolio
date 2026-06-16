@@ -30,14 +30,14 @@
 {\LARGE\textbf{Threat Model}}\\[4pt]
 {\large Operation fsoc: Case Study}\\[6pt]
 Gurmann Basran\\
-\small Revised 2026-06-04 (rev.\ 2).
+\small Revised 2026-06-15 (rev.\ 3).
 \end{center}
 
 \section{What this document is}
 
 This is the threat model I wrote before I touched the first firewall rule of the security hardening phase. It is the document I return to every time I add a new service, redraw a trust boundary, or make any change I cannot cleanly reverse. What follows is the category-level version of it; specific tool names, service names, exposed port counts, upstream provider names, and ISP identity have been deliberately stripped. The exercise itself is what I want to show, not the particular surface of my network.
 
-I am publishing this because writing a threat model was genuinely the most useful half-day of the project. Deciding what I am defending against forces me to decide what I am explicitly \emph{not} defending against, and that decision in turn tells me which phase each piece of attack surface belongs to. This revision folds in two milestones of changes since the first version; where a row used to say a control was deferred and the control has since shipped, the row now says so.
+I am publishing this because writing a threat model was genuinely the most useful half-day of the project. Deciding what I am defending against forces me to decide what I am explicitly \emph{not} defending against, and that decision in turn tells me which phase each piece of attack surface belongs to. This is the third revision, and it keeps folding in changes as they ship; where a row used to say a control was deferred and the control has since landed, the row now says so. The largest addition this time is a row of defense the first two versions did not have at all, because the failure it covers has nothing to do with an attacker and everything to do with the system falling over under its own weight.
 
 \section{What the model defends against}
 
@@ -46,11 +46,11 @@ The classes of threat I am designing around:
 \begin{itemize}[leftmargin=18pt,itemsep=2pt]
   \item External reconnaissance and exploitation of publicly-reachable services. The perimeter exposes a small, carefully-chosen set of inbound paths, and every one of those paths is attack surface.
   \item Lateral movement between trust zones. If one of my devices in the home zone gets compromised (malware, drive-by, whatever), the attacker should not have a direct path into the services zone, the anonymity zone, or the offensive-learning zone. They should have to come through the same gate a legitimate request would.
-  \item A stolen device with valid credentials escalating to broad network access. Any device I carry (phone, admin workstation, portable USB) has some credentials on it. If any of them is stolen, the stolen credentials should grant a narrow slice of access, not free run of the network. Fleet access now rests on short-lived signed certificates rather than long-lived keys, so a credential lifted from a device ages out on its own and can be revoked centrally in one action.
+  \item A stolen device with valid credentials escalating to broad network access. Any device I carry (phone, admin workstation, portable USB) has some credentials on it. If any of them is stolen, the stolen credentials should grant a narrow slice of access, not free run of the network. Fleet access now rests entirely on short-lived signed certificates rather than long-lived keys; the cutover is complete, the last long-lived static key has been removed, and a self-checking gate refuses to let one creep back in. A credential lifted from a device ages out on its own, and revoking it is a single central action.
   \item Credential theft cascading across services. A compromised cookie on one internal app should not mean compromise of every internal app; the SSO layer scope has to be right. An exfiltrated API token should be scope-locked to the minimum it needs.
   \item Passive surveillance of the queries leaving the network. The resolution path for every name lookup in the network is chained so that plaintext queries never leave the site.
   \item Supply-chain compromise reaching the fleet through a package, an image, or an update. Public registries have been poisoned more than once in the last year. Updates are reviewed rather than applied unattended, and when a campaign breaks I run a standing forensic sweep that checks every host against the published indicators and turns any confirmed match into a perimeter block.
-  \item Resource-exhaustion denial-of-service coming from inside (runaway logs, unbounded growth) or outside (flooding the perimeter).
+  \item Resource-exhaustion failure coming from inside (a runaway process, unbounded log or container growth, a job that eats a host's memory) or outside (flooding the perimeter). This class earned a dedicated defense only after it bit me: a capacity watchdog now runs from an independent host and watches for sustained pressure building, rather than waiting for the crash to announce itself. The lesson behind that addition is in the methodology and lessons documents.
   \item Single-host log tampering that hides post-compromise activity. Centralized off-host log forwarding is the next detection milestone and its research is done; until it lands, the mitigations that do not require new infrastructure carry the load, and a live per-host and per-container egress monitor flags traffic that should not be leaving.
 \end{itemize}
 
@@ -105,6 +105,14 @@ The admin workstation is compromised. &
 It carries a short-lived signed certificate, not the keys to the kingdom; the secrets live in the vault behind a second factor, not on the disk. The blast radius is the certificate's remaining lifetime, after which the access ages out, and revocation is central and immediate. &
 Real-time push on every privileged login across the fleet, with the user, source, and a location lookup; a login I did not start is a page-one event. \\
 \hline
+A host exhausts its own resources: a runaway process, a memory leak, a disk or scratch volume filling up. &
+Per-host isolation keeps one host's exhaustion from cascading to the others. A capacity watchdog that runs from a host which does not depend on the one being watched catches sustained pressure while there is still time to intervene, rather than after the host has already fallen over. &
+Operator-tuned thresholds on sustained processor saturation, memory and swap pressure, and filesystem fill, each pushed as a real-time alert rather than discovered in a morning log review. \\
+\hline
+The primary backup medium is lost, or backups silently stop being produced. &
+Backups are written off-host and encrypted, and the encryption key is escrowed off the fleet, so the loss of any single location is survivable. The archives have been proven to decrypt and restore end to end, not merely to exist on disk. &
+A staleness alarm fires if a fresh backup does not appear inside its expected window, so a backup that quietly stops is itself a page-able event rather than a surprise discovered during a recovery. \\
+\hline
 \end{longtable}
 
 The pattern is what matters: every row pairs a containment bound with a detection. I do not accept a row that says ``the attacker would be in a lot of places.'' I do not accept a row that says ``we would figure it out eventually.'' If I cannot fill in both columns, the component does not deploy.
@@ -124,7 +132,7 @@ There is also a \textit{red-team additional} category I ended up creating for fi
 
 \section{How the model is kept current}
 
-The threat model is not a one-time document. I re-read it at the start of every new phase, before I touch anything. If the phase adds a new service, a new trust zone, or a new boundary, the relevant sections get updated in the same commit that adds the component. The assume-breach table is gate-checked on every deploy: a component that cannot name its blast-radius limit and its detection signal does not get deployed. This is the second revision of the public version, and the controls that moved from deferred to deployed since the first one, central certificate auth and the canary tokens, are exactly the rows that prove the model is maintained rather than written once and abandoned.
+The threat model is not a one-time document. I re-read it at the start of every new phase, before I touch anything. If the phase adds a new service, a new trust zone, or a new boundary, the relevant sections get updated in the same commit that adds the component. The assume-breach table is gate-checked on every deploy: a component that cannot name its blast-radius limit and its detection signal does not get deployed. This is the third revision of the public version. The controls that moved from in-progress to fully shipped since the last one, the completed cutover to certificate-only fleet authentication, the off-fleet escrow of the backup encryption key, and the staleness alarm on the backups themselves, are exactly the rows that prove the model is maintained rather than written once and abandoned. The newest row, the one for a host exhausting its own resources, is there because the model is supposed to grow a row every time reality teaches me a failure mode I had not written down, and this revision it taught me one.
 
 The full findings table, which lives in the private planning directory rather than in this public writeup, is linked by ID to the commit that closed each finding. There is no ``fix it later'' entry without a phase assignment. The paper trail is the point; months from now, when I am asking myself why a particular rule exists, the commit message and the finding ID should give me the answer without having to rebuild the reasoning from scratch.
 

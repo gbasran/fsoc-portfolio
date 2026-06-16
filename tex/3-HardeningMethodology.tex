@@ -30,7 +30,7 @@
 {\LARGE\textbf{Hardening Methodology}}\\[4pt]
 {\large Operation fsoc: Case Study}\\[6pt]
 Gurmann Basran\\
-\small Revised 2026-06-04 (rev.\ 2).
+\small Revised 2026-06-15 (rev.\ 3).
 \end{center}
 
 \section{Why I wrote one}
@@ -38,6 +38,8 @@ Gurmann Basran\\
 When I started this project, my first few sessions were ``read a blog post, copy a config, move on.'' That produced a system that looked hardened. My notes said I had done a lot of things. In practice, three weeks later, I could not tell you which change addressed which risk, or whether a given rule was still serving its original purpose or had become vestigial. The methodology in this document exists because I got tired of that.
 
 The core idea is borrowed from formal audit practice and scaled down to a solo operator: every finding gets a stable ID, every mitigation names the ID it closes, and no ``fix it later'' entry survives without a phase assignment. It sounds bureaucratic when you first read it and it sounds obvious after you have done it. The difference is measured in how long it takes to answer ``why does this rule exist?'' three months from now.
+
+This is the audit-and-verification half of a broader systems-engineering discipline the project runs on. There is a charter, a requirements specification in which each requirement carries a stable identifier, and a traceability matrix that already links each requirement to the design that satisfies it and the test that proves it. The finding IDs in this document plug into that same chain, so a fix is never just a change; it is a change tied back to the requirement it serves and the verification that confirms it. The point of the whole apparatus is that traceability, not the paperwork for its own sake.
 
 \section{The five-step loop}
 
@@ -102,6 +104,14 @@ The second time, I ran the loop across the whole fleet as one structured milesto
 The fix-tagged findings are the ones that became the next milestone. There were twenty-nine of them, and the remediation milestone closed every one. The discipline I most want to show is what ``closed'' means here: each fix-required finding is traced from its ID through the phase that owned it, the plan that executed it, and the verification test that proved it, and the milestone did not get marked done until that trace read twenty-nine of twenty-nine satisfied. The improve-tagged findings became a separate hardening milestone layered on top, and the defer-tagged ones went into the threat model's residual-risk column with a reason attached, not into a void.
 
 The point of showing the structure rather than the contents is the same at both scales: the structure is what transfers to another project. The specific findings are project-specific; the methodology is not.
+
+\section{The dimension the audit did not have}
+
+The fleet-wide audit covered seven domains, and I was quietly proud of how complete it felt. Then the system failed in a way the audit had no language for. A background process went runaway and pinned a processor core for the better part of a week before I caught it; on a separate occasion a routine maintenance job staged far more data into a memory-backed scratch area than the host had memory for, and drove that host into the kernel's out-of-memory killer while it was otherwise sitting idle. Neither of those was a security misconfiguration. Both of them took a service down. And every domain of the audit would have passed clean the entire time.
+
+The gap was that every question the audit asked was a security question: can an attacker reach this, is this surface exposed, is this credential scoped to what uses it. None of them was an operational question: does this host have headroom, is something consuming a resource without bound, will this stay up under its own legitimate load. A static configuration audit, run at a point in time, cannot answer those, because they are temporal. The failure is not visible in any single snapshot; it lives in a trend across hours. A snapshot taken an hour before the out-of-memory kill looks perfectly healthy.
+
+So I added an eighth dimension to the methodology, operational health and capacity, and I deliberately gave it a different shape from the other seven. Its findings are tagged by the failure mode they expose, runaway process, memory or swap pressure, unbounded growth, filesystem fill, rather than by an attacker-facing severity. And the dimension is not satisfied by a one-time pass the way a configuration domain is; it is satisfied by a watchdog that keeps asking the question on a tight interval, from a host that does not depend on the one being measured. The watchdog itself is described in the scripts document, and the integration lesson that produced it is in the lessons document. The rest of the methodology around it did not change at all: each finding still gets a stable ID, an action tag, a phase assignment, and a trace to the change that closed it. What changed is that I stopped quietly assuming that a system which is secure is the same thing as a system which is healthy. The same realization is why a later milestone went back and proved, rather than assumed, that the backups restore; assuming a property holds because the configuration looks right is exactly the trap this dimension exists to break.
 
 \section{Phase ordering: safe changes first}
 

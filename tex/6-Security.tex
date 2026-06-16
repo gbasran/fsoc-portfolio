@@ -29,7 +29,7 @@
 {\LARGE\textbf{Security Posture of This Repository}}\\[4pt]
 {\large Operation fsoc: Case Study}\\[6pt]
 Gurmann Basran\\
-\small Revised 2026-06-04 (rev.\ 2).
+\small Revised 2026-06-15 (rev.\ 3).
 \end{center}
 
 \section{What this repository is, and is not}
@@ -57,6 +57,10 @@ The redaction philosophy I have applied across all seven documents is simple. Ev
   \item Script snippets, heuristic thresholds, detection timing, script-to-layer mapping, or the protocol-specific primitives each script reads. Scripts are described at the goal level only.
   \item Details of the phases that involve offensive capability (the physical-security phase, the advanced-track phase) beyond a generic mention that they exist.
   \item A catalogue of any physical-security tooling kit: hardware model names, firmware versions, serial numbers.
+  \item The specific thresholds, intervals, and capacity numbers the operational-health watchdog triggers on. The method (watch a trend rather than a snapshot, alert before the crash rather than after) is in this writeup; the operator-tuned numbers are not, because they describe the exact headroom of specific hosts.
+  \item The physical escrow arrangement for the backup encryption key, beyond the fact that an off-fleet copy exists and has been verified current. Where it is kept, and how, is out.
+  \item The internals of the orchestration and coordination layer the project now runs on: the specific tools, the governance thresholds, and the change-class table that decides what runs unattended. The design reasoning is in the Overview and Scripts documents; the mechanism is not.
+  \item The destination of the planned hardware relocation, beyond the fact that it is a move to a new site behind a new upstream provider. It is described only as a forcing function for recovery, never by where it is going.
 \end{itemize}
 
 \section{What is deliberately in}
@@ -68,7 +72,9 @@ The redaction philosophy I have applied across all seven documents is simple. Ev
   \item Script design principles and the common patterns across every script in the set, at the goal level.
   \item Integration traps at the ``class of trap'' level, without the specific tool names that would help someone fingerprint my stack.
   \item The reasoning behind the workstation migration and the residual risk it does and does not close, at the design level, with the parts list left out.
-  \item My professional identity: name, institution, country, the fact that this is a personal project of mine.
+  \item The operational-health and capacity methodology: that it is a distinct audit dimension, that it is checked continuously rather than at a point in time, and the reasoning for why a security audit alone does not cover it.
+  \item The recovery-verification methodology: proving the backups actually restore rather than assuming they do, escrowing the recovery key off the fleet and verifying that copy is current, and alarming on backup staleness.
+  \item My professional identity: name, field of study, country, the fact that this is a personal project of mine.
 \end{itemize}
 
 The test I apply when deciding whether something goes in the public repo or stays in the private planning directory is: ``if this fell into the hands of an attacker, would it help them more than it has already helped me to publish it?'' The methodology and the reasoning pass that test. The specific tool names and configuration do not.

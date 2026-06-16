@@ -30,14 +30,14 @@
 {\LARGE\textbf{Lessons Learned}}\\[4pt]
 {\large Integration Traps from the Project}\\[6pt]
 Gurmann Basran\\
-\small Revised 2026-06-04 (rev.\ 2).
+\small Revised 2026-06-15 (rev.\ 3).
 \end{center}
 
 \section{Why this document exists}
 
 Each of the traps in this document cost me real debugging time, somewhere between one and eight hours each, and in one case an evening where I nearly lost internet for my whole apartment. None of them were findable by reading the official documentation of the tools involved ahead of time. Every one of them generalizes beyond my specific project, which is why I have written each one at the \emph{class of trap} level. Specific tool names, config paths, and version strings have been kept out because they are attacker-useful fingerprints; what is preserved is the pattern itself.
 
-The point of keeping a document like this is so that future-me does not re-discover the same lesson on a Tuesday at 2 AM. The secondary point is that if you are reading this and you work with anything in the same category of tool, one of these might save you an afternoon. This revision adds the traps from the second hardening pass and the workstation migration to the ones from the original build.
+The point of keeping a document like this is so that future-me does not re-discover the same lesson on a Tuesday at 2 AM. The secondary point is that if you are reading this and you work with anything in the same category of tool, one of these might save you an afternoon. This revision adds the traps from the operational-health work, the recovery-insurance milestone, and a surface-reduction teardown to the ones from the original build, the second hardening pass, and the workstation migration.
 
 \section{Do not re-serialize a config file when the tool treats it as a byte-exact artifact}
 
@@ -143,9 +143,49 @@ The point of keeping a document like this is so that future-me does not re-disco
 
 \textbf{Why this generalizes.} The repository is not the source of truth; each host's filesystem is its own truth, and the two drift apart over time. Any audit that scopes only to the repository has a blind spot exactly the size of ``things that live only on a host,'' so the audit has to reach the host filesystem directly.
 
+\section{A security audit with no operational-health dimension is blind to the failures that take you down}
+
+\textbf{Class of trap.} A thorough security audit measures configuration correctness, access control, and attack surface. It does not measure whether a host has headroom, whether something is consuming a resource without bound, or whether the system will stay up under its own legitimate load. Those are temporal and capacity questions, and a point-in-time configuration audit cannot answer them, because the failure is not in any single snapshot; it is in a trend across hours. The trap is that the audit passes clean, every domain green, and then the system falls over to a runaway process or an out-of-memory event that was never in scope. A perfect security posture and an operational outage coexist comfortably.
+
+\textbf{The right path.} Treat operational health as its own audit dimension, separate from the security one, and give it a different mechanism. The security audit can be a point-in-time pass; the operational one cannot, because the property it checks is a trend. It has to run continuously: sustained processor saturation, memory and swap pressure, unbounded growth, filesystem fill, each watched on an interval rather than verified once. Tag its findings by the failure they expose, not by an attacker-facing severity, because the question has changed from ``how bad is this misconfiguration'' to ``what are we blind to.''
+
+\textbf{Why this generalizes.} Any system whose failure modes include resource exhaustion needs operational-health monitoring that is independent of its security hardening, because the two ask different questions: the security audit asks ``can an attacker reach this,'' and the operational audit asks ``will this stay up on its own.'' A green security audit is not evidence of the second thing, and quietly treating it as if it were is how a well-secured system surprises you by falling over.
+
+\section{The monitor that watches a host should not live on that host}
+
+\textbf{Class of trap.} To save a machine, you run the monitoring and alerting stack on the same host as the services it watches. Under normal load this is fine. Under the exact conditions you most need an alert, memory pressure, an out-of-memory event, a full disk, the monitoring stack is a victim too. If the kernel's out-of-memory killer reaps the alerting daemon instead of the noisy service, or the disk that fills is the one the alerter writes to, the host dies in silence and you find out hours later from the absence of a heartbeat. The detection inverts at the worst possible moment.
+
+\textbf{The right path.} Put each safety-critical check on a host that does not depend on the thing it is checking, the same principle as the out-of-band perimeter monitor. Where a monitor genuinely must share a host with what it watches, make it the last thing to be sacrificed: protect it from the out-of-memory killer explicitly and size its limits so the cap itself does not promote it to first victim. Treat the monitoring stack as load-bearing infrastructure, not as a passive observer that is always there.
+
+\textbf{Why this generalizes.} Any monitor co-located with its subject is a latent single point of failure under resource exhaustion, because the failure it exists to report can take it down before it reports. The cheapest fix is independence; the next cheapest is explicit survival priority. Either way, ``the monitor is running'' is not the same guarantee as ``the monitor will still be running when the bad thing happens.''
+
+\section{A backup you have never restored is a hope, not a backup}
+
+\textbf{Class of trap.} You configure backups, they run on a schedule, the job reports success, and you move on. The failure mode of a backup is silence: it can keep producing nothing, or producing subtly corrupt or incomplete archives, and look perfectly healthy from the outside the entire time. You discover which kind you had only during the disaster, when it is the one moment you cannot afford to find out. A ``the job ran'' check confirms the job ran; it confirms nothing about whether what it produced can bring the system back.
+
+\textbf{The right path.} Verify recoverability behaviorally, on a schedule, before you need it. Decrypt a real archive, unpack it, and confirm the contents are intact rather than truncated. Audit completeness against the restore plan, not against what the job happened to capture, which is how I found pieces I assumed were covered and were not. And alarm on the absence of fresh output, so a backup job that quietly stopped is itself a page-able event rather than a surprise.
+
+\textbf{Why this generalizes.} Backups fail toward looking fine, so the only honest signal is to exercise the restore path and to treat silence as failure. This holds for any redundancy whose value is only realized during a rare event: untested failover, an unexercised rollback, a disaster-recovery runbook nobody has walked through. If you have not made it work at least once on purpose, you do not know that it works; you are hoping.
+
+\section{A recovery key kept only on the machine it protects is a bootstrap paradox}
+
+\textbf{Class of trap.} Your backups are encrypted, which is correct. The key that decrypts them lives on the machine the backups are of, which is the quiet mistake. As long as that machine is healthy you never notice, because you never need to decrypt from anywhere else. The day the machine dies, which is precisely the day you reach for the backups, the only copy of the key you need to read them died with it. You have a vault and no way in.
+
+\textbf{The right path.} Store the recovery key in physically separate escrow, off the machine and off the fleet, and prove the escrowed copy is current rather than assuming it. The proof is concrete: derive the public identity from the escrowed key and confirm it matches the one the live backups were actually encrypted to. An escrow you have not verified against the real backups is a second hope stacked on the first.
+
+\textbf{Why this generalizes.} Any credential whose entire purpose is recovery has to survive the failure it recovers from, which means it cannot share fate with the thing it protects. The general shape is to ask, for every recovery secret, ``where is this when the machine is gone,'' and to refuse any answer that is ``on the machine.''
+
+\section{Tear a tunneled service down in dependency order, or you orphan its pieces}
+
+\textbf{Class of trap.} Decommissioning a service that reaches the outside through a managed tunnel and an identity gate is more than stopping a container. The pieces have an order. Delete the upstream cloud resource first and the local connector keeps trying to register against something that no longer exists; delete a shared network while a live member is still attached and the removal fails or strands the survivor; rotate or remove a credential that, unknown to you, a different service was also using, and you break that one instead. The teardown looks done from one angle while it has quietly left orphaned state on another.
+
+\textbf{The right path.} Map every shared resource, networks, credentials, ingress records, before removing anything, and tear down in dependency order: stop the connector and let it deregister cleanly first, confirm the path is inactive, then delete the upstream resources, and only then remove the shared pieces, after migrating any surviving consumer off them. The rule is the same as stopping a service before uninstalling its package: whatever must deregister should deregister before the thing it registered against is gone.
+
+\textbf{Why this generalizes.} This is independent of any particular provider. Any system with a registration relationship and shared dependencies has a correct teardown order, and doing it out of order leaves orphans that resurface weeks later as a name that will not free up or a credential that still works. Removal is a change like any other; it deserves the same ordering discipline as a deploy, and a quick inventory of what else touches each piece before you pull it.
+
 \section{Meta-lesson}
 
-Every one of these cost between one and eight hours of debug time. All of them were invisible until I triggered them; none were findable by reading the official documentation ahead of time. They span the original build, the second hardening pass, and the workstation migration, which tells me the supply of these does not run out as a project matures; it just moves to whatever layer I most recently started trusting. The way you build a hardened system is by making these discoveries, writing them down, and cross-referencing them across your projects so future-you does not re-discover them at 2 AM on a Tuesday.
+Every one of these cost real debugging time, and several of the newer ones cost an outage rather than just an afternoon. Almost all of them were invisible until I triggered them; none were findable by reading the official documentation ahead of time. They span the original build, the second hardening pass, the workstation migration, and now the operational-health and recovery work, which tells me the supply of these does not run out as a project matures; it just moves to whatever layer I most recently started trusting. The most recent batch is its own confirmation of that: the moment I trusted the security audit to mean the system was fine, and trusted the backups to mean I could recover, the system found the gap between those assumptions and reality and showed it to me. The way you build a hardened system is by making these discoveries, writing them down, and cross-referencing them across your projects so future-you does not re-discover them at 2 AM on a Tuesday.
 
 I keep the live version of this document in my private planning directory, with the specific tool names and config paths intact because I need them for my own debugging. The public version that you are reading is the generalized one. If any of these patterns saves you an afternoon, that is the whole point of writing them down.
 
